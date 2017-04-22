@@ -1,4 +1,4 @@
-#DiscreteSeekBar
+# DiscreteSeekBar
 
 ![screenshot](https://lh6.googleusercontent.com/-JjvxVMCm1ug/VHUPWVBfpbI/AAAAAAAAHtQ/TPtoOjHI5MA/w639-h356/seekbar2.gif)
 
@@ -6,7 +6,7 @@
 
 DiscreteSeekbar is my poor attempt to develop an android implementation of the [Discrete Slider] component from the Google Material Design Guidelines.
 
-Upd##Prologue
+## Prologue
 I really hope Google provides developers with a better (and official) implementation ;)
 
 ##Warning
@@ -17,7 +17,7 @@ android.util.Log.wtf("WARNING!! HACKERY-DRAGONS!!");
 ```
 I've done a few bit of hacky cede and a bunch of things I'm not completely proud of, so use under your sole responsibility (or help me improve it via pull-requests!)
 
-##Implementation details
+## Implementation details
 This thing runs on minSDK=7 (well, technically could run 4 but can't test since AVDs for api 4 are deprecated and just don't boot).
 Obviously some of the subtle animations (navigating with the Keyboard, the Ripple effect, text fade ins/fade outs, etc) are not going to work on APIS lower than 11, but the bubble thing does. And I haven't found a way of improving this with 11-21 APIs, so...
 
@@ -33,19 +33,25 @@ The material-floating-thing is composed into the WindowManager (like the typical
 
 >For this I'm not sure about the amounts of things I've copied from [PopupWindow] and the possible issues.
 
-##Dependencies
+## Dependencies
 It uses **com.android.support:support-v4** as the only dependency.
 
-##Usage
-This is published in jCenter so you need to use the appropiate repo:
+## Usage
+*discreteSeekBar* is available on [**jitpack.io**](https://jitpack.io/#pinpong/discreteSeekBar).
 
-```groovy
-repositories {
-    jcenter()
+Add this in your root `build.gradle` file (**not** your module `build.gradle` file):
+```gradle
+allprojects {
+    repositories {
+        maven { url 'https://jitpack.io' }
+    }
 }
+```
 
+Add this in your module `build.gradle` file:
+```gradle
 dependencies {
-    compile 'org.adw.library:discrete-seekbar:1.0.1'
+    compile 'com.github.pinpong:discreteSeekBar:-SNAPSHOT'
 }
 ```
 
@@ -60,7 +66,7 @@ Once imported into your project, you just need to put them into your layous like
 />
 ```
 
-####Parameters
+#### Parameters
 You can tweak a few things of the DiscreteSeekbar:
 
 * **dsb_min**: minimum value
@@ -72,7 +78,7 @@ You can tweak a few things of the DiscreteSeekbar:
 * **dsb_indicatorPopupEnabled**: choose if the bubble indicator will be shown. Default TRUE
 * **dsb_orientation**: Whether the DiscreteSeekbar will be `horizontal` or `vertical`. Defaults to `horizontal`
 
-####Design
+#### Design
  
 * **dsb_progressColor**: color/colorStateList for the progress bar and thumb drawable
 * **dsb_trackColor**: color/colorStateList for the track drawable
@@ -87,7 +93,7 @@ You can tweak a few things of the DiscreteSeekbar:
 
 You can also use the attribute **discreteSeekBarStyle** on your themes with a custom Style to be applied to all the DiscreteSeekBars on your app/activity/fragment/whatever.
 
-##License
+## License
 ```
 Copyright 2014 Gustavo Claramunt (Ander Webbs)
 
