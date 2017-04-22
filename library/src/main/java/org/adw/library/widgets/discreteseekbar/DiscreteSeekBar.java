@@ -39,8 +39,7 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewParent;
-import java.util.Formatter;
-import java.util.Locale;
+
 import org.adw.library.widgets.discreteseekbar.internal.PopupIndicator;
 import org.adw.library.widgets.discreteseekbar.internal.compat.AnimatorCompat;
 import org.adw.library.widgets.discreteseekbar.internal.compat.SeekBarCompat;
@@ -48,106 +47,33 @@ import org.adw.library.widgets.discreteseekbar.internal.drawable.MarkerDrawable;
 import org.adw.library.widgets.discreteseekbar.internal.drawable.ThumbDrawable;
 import org.adw.library.widgets.discreteseekbar.internal.drawable.TrackRectDrawable;
 
+import java.util.Formatter;
+import java.util.Locale;
+
 import static java.lang.Math.max;
 import static org.adw.library.widgets.discreteseekbar.DiscreteSeekBar.Orientation.HORIZONTAL;
 import static org.adw.library.widgets.discreteseekbar.DiscreteSeekBar.Orientation.VERTICAL;
 
 public class DiscreteSeekBar extends View {
 
-    /**
-     * Interface to propagate seekbar change event
-     */
-    public interface OnProgressChangeListener {
-        /**
-         * When the {@link DiscreteSeekBar} value changes
-         *
-         * @param seekBar  The DiscreteSeekBar
-         * @param value    the new value
-         * @param fromUser if the change was made from the user or not (i.e. the developer calling {@link #setProgress(int)}
-         */
-        void onProgressChanged(DiscreteSeekBar seekBar, int value, boolean fromUser);
-
-        void onStartTrackingTouch(DiscreteSeekBar seekBar);
-
-        void onStopTrackingTouch(DiscreteSeekBar seekBar);
-    }
-
-    /**
-     * Interface to transform the current internal value of this DiscreteSeekBar to anther one for the visualization.
-     * <p/>
-     * This will be used on the floating bubble to display a different value if needed.
-     * <p/>
-     * Using this in conjunction with {@link #setIndicatorFormatter(String)} you will be able to manipulate the
-     * value seen by the user
-     *
-     * @see #setIndicatorFormatter(String)
-     * @see #setNumericTransformer(DiscreteSeekBar.NumericTransformer)
-     */
-    public static abstract class NumericTransformer {
-        /**
-         * Return the desired value to be shown to the user.
-         * This value will be formatted using the format specified by {@link #setIndicatorFormatter} before displaying it
-         *
-         * @param value The value to be transformed
-         * @return The transformed int
-         */
-        public abstract int transform(int value);
-
-        /**
-         * Return the desired value to be shown to the user.
-         * This value will be displayed 'as is' without further formatting.
-         *
-         * @param value The value to be transformed
-         * @return A formatted string
-         */
-        public String transformToString(int value) {
-            return String.valueOf(value);
-        }
-
-        /**
-         * Used to indicate which transform will be used. If this method returns true,
-         * {@link #transformToString(int)} will be used, otherwise {@link #transform(int)}
-         * will be used
-         */
-        public boolean useStringTransform() {
-            return false;
-        }
-    }
-
-
-    private static class DefaultNumericTransformer extends NumericTransformer {
-
-        @Override
-        public int transform(int value) {
-            return value;
-        }
-    }
-
-    /** Describes the orientation of {@link DiscreteSeekBar} */
-    protected enum Orientation {
-        HORIZONTAL, VERTICAL
-    }
-
-
     private static final boolean isLollipopOrGreater = Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP;
     //We want to always use a formatter so the indicator numbers are "translated" to specific locales.
     private static final String DEFAULT_FORMATTER = "%d";
-
     private static final int PRESSED_STATE = android.R.attr.state_pressed;
     private static final int FOCUSED_STATE = android.R.attr.state_focused;
     private static final int PROGRESS_ANIMATION_DURATION = 250;
     private static final int INDICATOR_DELAY_FOR_TAPS = 150;
     private static final int DEFAULT_THUMB_COLOR = 0xff009688;
     private static final int SEPARATION_DP = 5;
+    //We use our own Formatter to avoid creating new instances on every progress change
+    Formatter mFormatter;
     private ThumbDrawable mThumb;
     private TrackRectDrawable mTrack;
     private TrackRectDrawable mScrubber;
     private Drawable mRipple;
-
     private int mTrackThickness;
     private int mScrubberThickness;
     private int mAddedTouchBounds;
-
     private int mMax;
     private int mMin;
     private int mProgress;
@@ -155,15 +81,12 @@ public class DiscreteSeekBar extends View {
     private boolean mMirrorForRtl = false;
     private boolean mAllowTrackClick = true;
     private boolean mIndicatorPopupEnabled = true;
-    //We use our own Formatter to avoid creating new instances on every progress change
-    Formatter mFormatter;
     private String mIndicatorFormatter;
     private NumericTransformer mNumericTransformer;
     private StringBuilder mFormatBuilder;
     private OnProgressChangeListener mPublicChangeListener;
     private boolean mIsDragging;
     private int mDragOffset;
-
     private Rect mInvalidateRect = new Rect();
     private Rect mTempRect = new Rect();
     private PopupIndicator mIndicator;
@@ -172,9 +95,25 @@ public class DiscreteSeekBar extends View {
     private int mAnimationTarget;
     private float mDownX;
     private float mTouchSlop;
-
     private Orientation mOrientation;
+    private Runnable mShowIndicatorRunnable = new Runnable() {
+        @Override
+        public void run() {
+            showFloater();
+        }
+    };
+    private MarkerDrawable.MarkerAnimationListener mFloaterListener = new MarkerDrawable.MarkerAnimationListener() {
+        @Override
+        public void onClosingComplete() {
+            mThumb.animateToNormal();
+        }
 
+        @Override
+        public void onOpeningComplete() {
+
+        }
+
+    };
     public DiscreteSeekBar(Context context) {
         this(context, null);
     }
@@ -284,8 +223,8 @@ public class DiscreteSeekBar extends View {
             mIndicator.setListener(mFloaterListener);
         }
 
-      mOrientation =
-          a.getInt(R.styleable.DiscreteSeekBar_dsb_orientation, 0) == 0 ? HORIZONTAL : VERTICAL;
+        mOrientation =
+                a.getInt(R.styleable.DiscreteSeekBar_dsb_orientation, 0) == 0 ? HORIZONTAL : VERTICAL;
 
         a.recycle();
 
@@ -306,6 +245,16 @@ public class DiscreteSeekBar extends View {
     }
 
     /**
+     * Retrieves the current {@link DiscreteSeekBar.NumericTransformer}
+     *
+     * @return NumericTransformer
+     * @see #setNumericTransformer
+     */
+    public NumericTransformer getNumericTransformer() {
+        return mNumericTransformer;
+    }
+
+    /**
      * Sets the current {@link DiscreteSeekBar.NumericTransformer}
      *
      * @param transformer
@@ -318,14 +267,8 @@ public class DiscreteSeekBar extends View {
         updateProgressMessage(mProgress);
     }
 
-    /**
-     * Retrieves the current {@link DiscreteSeekBar.NumericTransformer}
-     *
-     * @return NumericTransformer
-     * @see #setNumericTransformer
-     */
-    public NumericTransformer getNumericTransformer() {
-        return mNumericTransformer;
+    public int getMax() {
+        return mMax;
     }
 
     /**
@@ -355,8 +298,8 @@ public class DiscreteSeekBar extends View {
         updateIndicatorSizes();
     }
 
-    public int getMax() {
-        return mMax;
+    public int getMin() {
+        return mMin;
     }
 
     /**
@@ -383,22 +326,6 @@ public class DiscreteSeekBar extends View {
         }
     }
 
-    public int getMin() {
-        return mMin;
-    }
-
-    /**
-     * Sets the current progress for this DiscreteSeekBar
-     * The supplied argument will be capped to the current MIN-MAX range
-     *
-     * @param progress
-     * @see #setMax(int)
-     * @see #setMin(int)
-     */
-    public void setProgress(int progress) {
-        setProgress(progress, false);
-    }
-
     private void setProgress(int value, boolean fromUser) {
         value = max(mMin, Math.min(mMax, value));
         if (isAnimationRunning()) {
@@ -418,6 +345,18 @@ public class DiscreteSeekBar extends View {
      */
     public int getProgress() {
         return mProgress;
+    }
+
+    /**
+     * Sets the current progress for this DiscreteSeekBar
+     * The supplied argument will be capped to the current MIN-MAX range
+     *
+     * @param progress
+     * @see #setMax(int)
+     * @see #setMin(int)
+     */
+    public void setProgress(int progress) {
+        setProgress(progress, false);
     }
 
     /**
@@ -586,25 +525,24 @@ public class DiscreteSeekBar extends View {
         }
     }
 
-
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-      int width = 0, height = 0;
-      switch (mOrientation) {
-        case HORIZONTAL:
-          width = MeasureSpec.getSize(widthMeasureSpec);
-          height = mThumb.getIntrinsicHeight() + getPaddingTop() + getPaddingBottom();
-          height += (mAddedTouchBounds * 2);
-          setMeasuredDimension(width, height);
-          break;
-        case VERTICAL:
-          width = mThumb.getIntrinsicWidth() + getPaddingLeft() + getPaddingRight();
-          width += (mAddedTouchBounds * 2);
-          height = MeasureSpec.getSize(heightMeasureSpec);
-          break;
-      }
+        int width = 0, height = 0;
+        switch (mOrientation) {
+            case HORIZONTAL:
+                width = MeasureSpec.getSize(widthMeasureSpec);
+                height = mThumb.getIntrinsicHeight() + getPaddingTop() + getPaddingBottom();
+                height += (mAddedTouchBounds * 2);
+                setMeasuredDimension(width, height);
+                break;
+            case VERTICAL:
+                width = mThumb.getIntrinsicWidth() + getPaddingLeft() + getPaddingRight();
+                width += (mAddedTouchBounds * 2);
+                height = MeasureSpec.getSize(heightMeasureSpec);
+                break;
+        }
 
-      setMeasuredDimension(width, height);
+        setMeasuredDimension(width, height);
 
     }
 
@@ -647,26 +585,26 @@ public class DiscreteSeekBar extends View {
                 int horizontalTrackBottom = bottom - halfThumb + trackThickness;
                 mTrack.setBounds(left, top, right, horizontalTrackBottom);
                 mScrubber.setBounds(left,
-                                    bottom - halfThumb - scrubberThickness,
-                                    left,
-                                    bottom - halfThumb + scrubberThickness);
+                        bottom - halfThumb - scrubberThickness,
+                        left,
+                        bottom - halfThumb + scrubberThickness);
                 break;
             case VERTICAL:
                 int verticalTrackLeft = getPaddingLeft() + addedThumb + trackThickness + halfThumb;
                 int verticalTrackRight = verticalTrackLeft + max(trackThickness, 2);
                 int verticalSeekBarTop = getPaddingTop() + addedThumb;
                 int verticalSeekBarBottom =
-                    getHeight() - getPaddingBottom() - addedThumb - trackThickness;
+                        getHeight() - getPaddingBottom() - addedThumb - trackThickness;
                 mTrack.setBounds(
-                    verticalTrackLeft,
-                    verticalSeekBarTop,
-                    verticalTrackRight,
-                    verticalSeekBarBottom);
-                int centerX = getLeft() + getWidth()/2;
+                        verticalTrackLeft,
+                        verticalSeekBarTop,
+                        verticalTrackRight,
+                        verticalSeekBarBottom);
+                int centerX = getLeft() + getWidth() / 2;
                 mScrubber.setBounds(centerX - scrubberThickness,
-                                    verticalSeekBarBottom,
-                                    centerX + scrubberThickness,
-                                    verticalSeekBarBottom);
+                        verticalSeekBarBottom,
+                        centerX + scrubberThickness,
+                        verticalSeekBarBottom);
                 break;
         }
 
@@ -860,7 +798,6 @@ public class DiscreteSeekBar extends View {
         return isAnimationRunning() ? getAnimationTarget() : mProgress;
     }
 
-
     boolean isAnimationRunning() {
         return mPositionAnimator != null && mPositionAnimator.isRunning();
     }
@@ -895,16 +832,15 @@ public class DiscreteSeekBar extends View {
         return mAnimationTarget;
     }
 
+    float getAnimationPosition() {
+        return mAnimationPosition;
+    }
+
     void setAnimationPosition(float position) {
         mAnimationPosition = position;
         float currentScale = (position - mMin) / (float) (mMax - mMin);
         updateProgressFromAnimation(currentScale);
     }
-
-    float getAnimationPosition() {
-        return mAnimationPosition;
-    }
-
 
     private void updateDragging(MotionEvent ev) {
         setHotspot(ev.getX(), ev.getY());
@@ -992,7 +928,7 @@ public class DiscreteSeekBar extends View {
                     mScrubber.getBounds().left = start + halfThumb;
                     mScrubber.getBounds().right = pos + halfThumb;
                 }
-        mThumb.setBounds(pos, mInvalidateRect.top, pos + thumbWidth, mInvalidateRect.bottom);
+                mThumb.setBounds(pos, mInvalidateRect.top, pos + thumbWidth, mInvalidateRect.bottom);
                 break;
             case VERTICAL:
                 start = getBottom() - getPaddingBottom() - mAddedTouchBounds;
@@ -1002,7 +938,7 @@ public class DiscreteSeekBar extends View {
                 mThumb.setBounds(mInvalidateRect.left, pos, mInvalidateRect.right, pos + thumbWidth);
                 Log.d("DiscreteSeekBar", "scrubber bounds = " + mScrubber.getBounds());
                 Log.d("DiscreteSeekBar", "view bounds: left[" + getLeft() + "], top[" + getTop() + "], right[" + getRight() + "], bottom[" +
-                                         getBottom() + "]");
+                        getBottom() + "]");
                 break;
         }
 
@@ -1018,7 +954,6 @@ public class DiscreteSeekBar extends View {
         SeekBarCompat.setHotspotBounds(mRipple, finalBounds.left, finalBounds.top, finalBounds.right, finalBounds.bottom);
         invalidate(mInvalidateRect);
     }
-
 
     private void setHotspot(float x, float y) {
         DrawableCompat.setHotspot(mRipple, x, y);
@@ -1036,13 +971,6 @@ public class DiscreteSeekBar extends View {
         }
     }
 
-    private Runnable mShowIndicatorRunnable = new Runnable() {
-        @Override
-        public void run() {
-            showFloater();
-        }
-    };
-
     private void showFloater() {
         if (!isInEditMode()) {
             mThumb.animateToPressed();
@@ -1058,19 +986,6 @@ public class DiscreteSeekBar extends View {
             notifyBubble(false);
         }
     }
-
-    private MarkerDrawable.MarkerAnimationListener mFloaterListener = new MarkerDrawable.MarkerAnimationListener() {
-        @Override
-        public void onClosingComplete() {
-            mThumb.animateToNormal();
-        }
-
-        @Override
-        public void onOpeningComplete() {
-
-        }
-
-    };
 
     @Override
     protected void onDetachedFromWindow() {
@@ -1109,7 +1024,95 @@ public class DiscreteSeekBar extends View {
         super.onRestoreInstanceState(customState.getSuperState());
     }
 
+    /**
+     * Describes the orientation of {@link DiscreteSeekBar}
+     */
+    protected enum Orientation {
+        HORIZONTAL, VERTICAL
+    }
+
+    /**
+     * Interface to propagate seekbar change event
+     */
+    public interface OnProgressChangeListener {
+        /**
+         * When the {@link DiscreteSeekBar} value changes
+         *
+         * @param seekBar  The DiscreteSeekBar
+         * @param value    the new value
+         * @param fromUser if the change was made from the user or not (i.e. the developer calling {@link #setProgress(int)}
+         */
+        void onProgressChanged(DiscreteSeekBar seekBar, int value, boolean fromUser);
+
+        void onStartTrackingTouch(DiscreteSeekBar seekBar);
+
+        void onStopTrackingTouch(DiscreteSeekBar seekBar);
+    }
+
+    /**
+     * Interface to transform the current internal value of this DiscreteSeekBar to anther one for the visualization.
+     * <p/>
+     * This will be used on the floating bubble to display a different value if needed.
+     * <p/>
+     * Using this in conjunction with {@link #setIndicatorFormatter(String)} you will be able to manipulate the
+     * value seen by the user
+     *
+     * @see #setIndicatorFormatter(String)
+     * @see #setNumericTransformer(DiscreteSeekBar.NumericTransformer)
+     */
+    public static abstract class NumericTransformer {
+        /**
+         * Return the desired value to be shown to the user.
+         * This value will be formatted using the format specified by {@link #setIndicatorFormatter} before displaying it
+         *
+         * @param value The value to be transformed
+         * @return The transformed int
+         */
+        public abstract int transform(int value);
+
+        /**
+         * Return the desired value to be shown to the user.
+         * This value will be displayed 'as is' without further formatting.
+         *
+         * @param value The value to be transformed
+         * @return A formatted string
+         */
+        public String transformToString(int value) {
+            return String.valueOf(value);
+        }
+
+        /**
+         * Used to indicate which transform will be used. If this method returns true,
+         * {@link #transformToString(int)} will be used, otherwise {@link #transform(int)}
+         * will be used
+         */
+        public boolean useStringTransform() {
+            return false;
+        }
+    }
+
+    private static class DefaultNumericTransformer extends NumericTransformer {
+
+        @Override
+        public int transform(int value) {
+            return value;
+        }
+    }
+
     static class CustomState extends BaseSavedState {
+        public static final Creator<CustomState> CREATOR =
+                new Creator<CustomState>() {
+
+                    @Override
+                    public CustomState[] newArray(int size) {
+                        return new CustomState[size];
+                    }
+
+                    @Override
+                    public CustomState createFromParcel(Parcel incoming) {
+                        return new CustomState(incoming);
+                    }
+                };
         private int progress;
         private int max;
         private int min;
@@ -1132,19 +1135,5 @@ public class DiscreteSeekBar extends View {
             outcoming.writeInt(max);
             outcoming.writeInt(min);
         }
-
-        public static final Creator<CustomState> CREATOR =
-                new Creator<CustomState>() {
-
-                    @Override
-                    public CustomState[] newArray(int size) {
-                        return new CustomState[size];
-                    }
-
-                    @Override
-                    public CustomState createFromParcel(Parcel incoming) {
-                        return new CustomState(incoming);
-                    }
-                };
     }
 }

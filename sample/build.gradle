@@ -1,19 +1,18 @@
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion deps.target_sdk
-    buildToolsVersion deps.build_tools
+    compileSdkVersion rootProject.ext.compileSdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
 
     defaultConfig {
         applicationId "org.adw.samples.discreteseekbar"
-        minSdkVersion deps.min_sdk
-        targetSdkVersion deps.target_sdk
-        versionCode 1
-        versionName "1.0"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode rootProject.ext.appVersionMajor * 10000 + rootProject.ext.appVersionMinor * 1000 + rootProject.ext.appVersionPatch * 100 + rootProject.ext.appVersionBuild
+        versionName "${rootProject.ext.appVersionMajor}.${rootProject.ext.appVersionMinor}" + (rootProject.ext.appVersionPatch != 0 ? ".${rootProject.ext.appVersionPatch}" : "")
     }
-
 }
 
 dependencies {
-    compile project (':library')
+    compile project(':library')
 }
